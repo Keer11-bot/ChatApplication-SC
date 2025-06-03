@@ -7,6 +7,7 @@ import { chatRooms } from '../data/chatData';
 import ChatMessage from '../components/ChatMessage';
 import SubscriptionModal from '../components/SubscriptionModal';
 import { countries } from '../data/countries';
+import { useChat } from '../hooks/useChat';
 
 const ChatRoomPage = () => {
   const { countryId } = useParams<{ countryId: string }>();
@@ -16,12 +17,12 @@ const ChatRoomPage = () => {
   const [message, setMessage] = useState('');
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showChatList, setShowChatList] = useState(true);
-  const [currentChatRooms, setCurrentChatRooms] = useState(
-    chatRooms.filter(room => room.country === countryId)
-  );
+  const [currentRoom, setCurrentRoom] = useState(`${countryId}-general`);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { messages, sendMessage } = useChat(currentRoom);
 
   const country = countries.find(c => c.id === countryId);
+  const currentChatRooms = chatRooms.filter(room => room.country === countryId);
 
   useEffect(() => {
     if (!countryId || !countries.some(c => c.id === countryId)) {
@@ -31,75 +32,32 @@ const ChatRoomPage = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [currentChatRooms]);
+  }, [messages]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!message.trim()) return;
 
-    if (subscriptionStatus === 'free') {
+    if (subscriptionStatus === 'free' && !currentRoom.includes('general')) {
       setShowSubscriptionModal(true);
       return;
     }
 
-    // Add the message to the first chat room
-    if (currentChatRooms.length > 0) {
-      const updatedRooms = [...currentChatRooms];
-      const firstRoom = { ...updatedRooms[0] };
-
-      firstRoom.messages = [
-        ...firstRoom.messages,
-        {
-          id: `new-${Date.now()}`,
-          sender: "You",
-          content: message,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isBot: false
-        }
-      ];
-
-      updatedRooms[0] = firstRoom;
-      setCurrentChatRooms(updatedRooms);
+    try {
+      await sendMessage(message);
       setMessage('');
-
-      // Simulate bot response after 1 second
-      setTimeout(() => {
-        const botResponses = [
-          "That's interesting! Tell me more.",
-          "I agree with your point.",
-          "Have you considered looking into this further?",
-          "That's helpful information, thanks for sharing!",
-          "I had a similar experience as well."
-        ];
-
-        const randomResponse = botResponses[Math.floor(Math.random() * botResponses.length)];
-
-        const responseRooms = [...updatedRooms];
-        const responseRoom = { ...responseRooms[0] };
-
-        responseRoom.messages = [
-          ...responseRoom.messages,
-          {
-            id: `new-bot-${Date.now()}`,
-            sender: "ChatBot",
-            content: randomResponse,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            isBot: true
-          }
-        ];
-
-        responseRooms[0] = responseRoom;
-        setCurrentChatRooms(responseRooms);
-      }, 1000);
+    } catch (error) {
+      console.error('Error sending message:', error);
     }
   };
 
-  const handleRoomClick = () => {
+  const handleRoomClick = (roomId: string) => {
+    setCurrentRoom(roomId);
     setShowChatList(false);
   };
 
@@ -133,9 +91,7 @@ const ChatRoomPage = () => {
               <div>
                 <h2 className="font-semibold">{country.name} Student Chat</h2>
                 <p className="text-xs text-gray-400">
-                  {currentChatRooms.length === 0
-                    ? "No active chat rooms"
-                    : `${currentChatRooms[0].participants} students online`}
+                  {country.activeUsers} students online
                 </p>
               </div>
             </div>
@@ -162,67 +118,44 @@ const ChatRoomPage = () => {
             >
               <div className="p-4">
                 <h3 className="text-sm font-medium text-gray-400 mb-2">CHAT ROOMS</h3>
-                {currentChatRooms.length === 0 ? (
-                  <p className="text-gray-500 text-sm">No chat rooms available</p>
-                ) : (
-                  <ul>
-                    {currentChatRooms.map((room) => (
-                      <li key={room.id} className="mb-2">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setShowModal(true);
-                            handleRoomClick();
-                          }}
-                          className="w-full text-left p-2 rounded hover:bg-gray-700 focus:outline-none focus:bg-gray-700 transition-colors"
-                        >
-                          <div className="font-medium">{room.title}</div>
-                          <div className="text-xs text-gray-400">
-                            <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1"></span>
-                            {room.participants} Online
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setShowModal(true);
-                            handleRoomClick();
-                          }}
-                          className="w-full text-left p-2 rounded hover:bg-gray-700 focus:outline-none focus:bg-gray-700 transition-colors"
-                        >
-                          <div className="font-medium">{room.country} Residence Student</div>
-                          <div className="text-xs text-gray-400">
-                            <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1"></span>
-                            {room.participants} Online
-                          </div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setShowModal(true);
-                            handleRoomClick();
-                          }}
-                          className="w-full text-left p-2 rounded hover:bg-gray-700 focus:outline-none focus:bg-gray-700 transition-colors"
-                        >
-                          <div className="font-medium">{room.sub2}</div>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handleRoomClick();
-                          }}
-                          className="w-full text-left p-2 rounded hover:bg-gray-700 focus:outline-none focus:bg-gray-700 transition-colors"
-                        >
-                          <div className="font-medium">{room.sub1}</div>
-                        </button>
-                      </li>
+                {currentChatRooms.map((room) => (
+                  <div key={room.id} className="mb-4">
+                    <button
+                      onClick={() => handleRoomClick(`${countryId}-general`)}
+                      className={`w-full text-left p-2 rounded hover:bg-gray-700 transition-colors ${
+                        currentRoom === `${countryId}-general` ? 'bg-gray-700' : ''
+                      }`}
+                    >
+                      <div className="font-medium">General Discussion</div>
+                      <div className="text-xs text-gray-400">
+                        <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+                        Open to all
+                      </div>
+                    </button>
+
+                    {/* Premium rooms */}
+                    {['study', 'jobs', 'social'].map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => handleRoomClick(`${countryId}-${type}`)}
+                        className={`w-full text-left p-2 rounded hover:bg-gray-700 transition-colors ${
+                          currentRoom === `${countryId}-${type}` ? 'bg-gray-700' : ''
+                        }`}
+                      >
+                        <div className="font-medium flex items-center">
+                          {type.charAt(0).toUpperCase() + type.slice(1)}
+                          {subscriptionStatus === 'free' && (
+                            <Lock className="h-3 w-3 ml-2 text-gray-400" />
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          <span className="inline-block w-2 h-2 bg-green-500 rounded-full mr-1"></span>
+                          Premium
+                        </div>
+                      </button>
                     ))}
-                  </ul>
-                )}
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -232,26 +165,20 @@ const ChatRoomPage = () => {
               ${showChatList ? 'hidden md:flex' : 'flex'}
             `}>
               <div className="flex-1 p-4 overflow-y-auto">
-                {currentChatRooms.length > 0 ? (
-                  <div className="space-y-4">
-                    {currentChatRooms[0].messages.map((message, index) => (
-                      <ChatMessage key={message.id} message={message} index={index} />
-                    ))}
-                    <div ref={messagesEndRef} />
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-gray-500">No messages to display</p>
-                  </div>
-                )}
+                <div className="space-y-4">
+                  {messages.map((message, index) => (
+                    <ChatMessage key={message.id} message={message} index={index} />
+                  ))}
+                  <div ref={messagesEndRef} />
+                </div>
               </div>
 
               {/* Message input */}
               <div className="p-4 border-t border-gray-700">
-                {subscriptionStatus === 'free' ? (
+                {subscriptionStatus === 'free' && !currentRoom.includes('general') ? (
                   <div className="bg-gray-800 rounded-md p-4 text-center">
                     <Lock className="h-5 w-5 mx-auto mb-2 text-gray-400" />
-                    <p className="text-gray-300 mb-2">You need a subscription to send messages</p>
+                    <p className="text-gray-300 mb-2">You need a subscription to send messages in premium rooms</p>
                     <button
                       className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm py-2 px-4 rounded"
                       onClick={() => setShowSubscriptionModal(true)}
@@ -287,20 +214,6 @@ const ChatRoomPage = () => {
         onClose={() => setShowSubscriptionModal(false)}
         countryId={countryId || ''}
       />
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-800 p-6 rounded-lg shadow-lg max-w-sm w-full text-white">
-            <h3 className="text-lg font-semibold mb-4">Upgrade Required</h3>
-            <p className="text-gray-300 mb-6">You need to upgrade to use this feature.</p>
-            <button
-              onClick={() => setShowModal(false)}
-              className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 rounded transition-colors text-white font-medium"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
