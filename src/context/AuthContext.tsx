@@ -109,6 +109,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await updateProfile(userCredential.user, {
         displayName: username
       });
+
+      // Save user data
+      const userDataRef = ref(database, `users/${userCredential.user.uid}`);
+      await set(userDataRef, {
+        email: email,
+        username: username,
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString()
+      });
       
     } catch (error) {
       console.error('Signup error:', error);
@@ -127,6 +136,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (!snapshot.exists()) {
         await set(usernameRef, result.user.uid);
+        
+        // Save user data
+        const userDataRef = ref(database, `users/${result.user.uid}`);
+        await set(userDataRef, {
+          email: result.user.email,
+          username: username,
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString()
+        });
       }
     } catch (error) {
       console.error('Google login error:', error);
