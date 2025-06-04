@@ -5,9 +5,10 @@ import {
   signInWithPopup,
   signOut,
   onAuthStateChanged,
-  User
+  User,
+  updateProfile
 } from 'firebase/auth';
-import { ref, set, get } from 'firebase/database';
+import { ref, set, get, onValue, off } from 'firebase/database';
 import { auth, googleProvider, database } from '../config/firebase';
 import { connectSocket, disconnectSocket } from '../config/socket';
 
@@ -19,7 +20,7 @@ interface AuthContextType {
   authStatus: AuthStatus;
   subscriptionStatus: SubscriptionStatus;
   login: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string, username: string) => Promise<void>;
   loginWithGoogle: () => Promise<void>;
   loginAsGuest: () => void;
   logout: () => Promise<void>;
@@ -54,6 +55,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (snapshot.exists()) {
           setSubscriptionStatus(snapshot.val().status);
         }
+        
+        // Update online status
+        const userStatusRef = ref(database, `status/${currentUser.uid}`);
+        await set(userStatusRef, {
+          state: 'online',
+          last_changed: new Date().toISOString()
+        });
       } else {
         setAuthStatus('none');
         setSubscriptionStatus('free');
@@ -61,7 +69,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (user) {
+        const userStatusRef = ref(database, `status/${user.uid}`);
+        set(userStatusRef, {
+          state: 'offline',
+          last_changed: new Date().toISOString()
+        });
+      }
+    };
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -73,9 +90,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, username: string) => {
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      // Check if username exists
+      const usernameRef = ref(database, `usernames/${username}`);
+      const snapshot = await get(usernameRef);
+      
+      if (snapshot.exists()) {
+        throw new Error('Username already taken');
+      }
+
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Save username
+      await set(usernameRef, userCredential.user.uid);
+      
+      // Update profile
+      await updateProfile(userCredential.user, {
+        displayName: username
+      });
+      
     } catch (error) {
       console.error('Signup error:', error);
       throw error;
@@ -84,7 +118,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithGoogle = async () => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      const username = result.user.email?.split('@')[0] || '';
+      
+      // Save username if it doesn't exist
+      const usernameRef = ref(database, `usernames/${username}`);
+      const snapshot = await get(usernameRef);
+      
+      if (!snapshot.exists()) {
+        await set(usernameRef, result.user.uid);
+      }
     } catch (error) {
       console.error('Google login error:', error);
       throw error;
@@ -97,6 +140,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
+      if (user) {
+        const userStatusRef = ref(database, `status/${user.uid}`);
+        await set(userStatusRef, {
+          state: 'offline',
+          last_changed: new Date().toISOString()
+        });
+      }
       await signOut(auth);
       setAuthStatus('none');
       setSubscriptionStatus('free');

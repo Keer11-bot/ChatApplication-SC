@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { ref, get } from 'firebase/database';
+import { database } from '../config/firebase';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -14,17 +16,48 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, countryId }) => 
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('');
   const [error, setError] = useState('');
+  const [usernameError, setUsernameError] = useState('');
+  const [suggestedUsernames, setSuggestedUsernames] = useState<string[]>([]);
   const { login, signUp, loginWithGoogle, loginAsGuest } = useAuth();
   const navigate = useNavigate();
+
+  const checkUsername = async (username: string) => {
+    if (!username) return;
+    
+    const usernameRef = ref(database, `usernames/${username}`);
+    const snapshot = await get(usernameRef);
+    
+    if (snapshot.exists()) {
+      setUsernameError('Username already taken');
+      generateSuggestedUsernames(username);
+    } else {
+      setUsernameError('');
+      setSuggestedUsernames([]);
+    }
+  };
+
+  const generateSuggestedUsernames = (baseUsername: string) => {
+    const suggestions = [
+      `${baseUsername}${Math.floor(Math.random() * 1000)}`,
+      `${baseUsername}_${Math.floor(Math.random() * 100)}`,
+      `${baseUsername}${new Date().getFullYear()}`,
+    ];
+    setSuggestedUsernames(suggestions);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
+    if (isSignUp && usernameError) {
+      return;
+    }
+
     try {
       if (isSignUp) {
-        await signUp(email, password);
+        await signUp(email, password, username);
       } else {
         await login(email, password);
       }
@@ -50,6 +83,16 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, countryId }) => 
     onClose();
     navigate(`/chat/${countryId}`);
   };
+
+  useEffect(() => {
+    if (username) {
+      const debounceTimer = setTimeout(() => {
+        checkUsername(username);
+      }, 500);
+
+      return () => clearTimeout(debounceTimer);
+    }
+  }, [username]);
 
   if (!isOpen) return null;
 
@@ -98,6 +141,36 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, countryId }) => 
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {isSignUp && (
+            <div>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Username"
+                className="w-full p-3 bg-gray-700 rounded-lg text-white placeholder-gray-400"
+                required
+              />
+              {usernameError && (
+                <div className="mt-2">
+                  <p className="text-red-400 text-sm mb-2">{usernameError}</p>
+                  <div className="space-y-2">
+                    <p className="text-gray-400 text-sm">Suggested usernames:</p>
+                    {suggestedUsernames.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setUsername(suggestion)}
+                        className="block w-full text-left px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <input
               type="email"
